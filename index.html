@@ -305,26 +305,39 @@ tr:last-child td{border:none}
   <div class="card">
     <div class="card-header">➕ Adicionar ingrediente</div>
     <div class="g2">
-      <div class="field"><label>Nome</label><input type="text" id="est-nome" placeholder="Ex: Farinha de trigo"></div>
+      <div class="field"><label>Nome</label><input type="text" id="est-nome" placeholder="Ex: Cacau em pó"></div>
+      <div class="field"><label>Unidade de compra (como você compra)</label>
+        <select id="est-uncompra" onchange="calcEstUnit()">
+          <option value="unidade">Unidade</option>
+          <option value="pacote" selected>Pacote</option>
+          <option value="caixa">Caixa</option>
+          <option value="saco">Saco</option>
+          <option value="lata">Lata</option>
+          <option value="bandeja">Bandeja</option>
+          <option value="garrafa">Garrafa</option>
+          <option value="frasco">Frasco</option>
+        </select>
+      </div>
+    </div>
+    <div class="g2">
       <div class="field"><label>Unidade de uso (na receita)</label>
         <select id="est-un" onchange="calcEstUnit()">
           <option value="g">Gramas (g)</option><option value="kg">Quilogramas (kg)</option>
           <option value="ml">Mililitros (ml)</option><option value="l">Litros (l)</option>
-          <option value="unidade">Unidade</option><option value="pacote">Pacote</option>
-          <option value="caixa">Caixa</option><option value="bandeja">Bandeja</option>
-          <option value="saco">Saco</option><option value="lata">Lata</option>
+          <option value="unidade">Unidade</option>
         </select>
       </div>
+      <div class="field"><label id="est-cont-label">Conteúdo da embalagem (g)</label><input type="number" id="est-cont" value="150" oninput="calcEstUnit()"></div>
     </div>
-    <div class="g3">
+    <div class="g2">
       <div class="field"><label>Preço pago pela embalagem (R$)</label><input type="number" id="est-preco" value="10" step="0.01" oninput="calcEstUnit()"></div>
-      <div class="field"><label id="est-cont-label">Conteúdo da embalagem (g)</label><input type="number" id="est-cont" value="1000" oninput="calcEstUnit()"></div>
       <div class="field"><label id="est-unit-label">Custo por g</label><input type="text" id="est-unit" class="calc-out" readonly value="R$ 0,00 / g"></div>
     </div>
     <div class="g2">
-      <div class="field"><label id="est-atual-label">Estoque atual (g)</label><input type="number" id="est-atual" value="0"></div>
-      <div class="field"><label id="est-min-label">Mínimo p/ alerta (g)</label><input type="number" id="est-min" value="0"></div>
+      <div class="field"><label id="est-atual-label">Estoque atual (em pacotes)</label><input type="number" id="est-atual" value="0" step="0.01"></div>
+      <div class="field"><label id="est-min-label">Mínimo p/ alerta (em pacotes)</label><input type="number" id="est-min" value="0" step="0.01"></div>
     </div>
+    <div class="card-sub" style="margin:0 0 10px">💡 O estoque é controlado na unidade de compra (ex.: 3 pacotes). O consumo pelas receitas é convertido automaticamente.</div>
     <button class="btn btn-red" onclick="addIngr()">Adicionar</button>
   </div>
   <div class="card">
@@ -1021,16 +1034,42 @@ function saveEditProd(){
 }
 function closeEditProd(){document.getElementById('edit-prod-modal').style.display='none';}
 
-/* ---- ESTOQUE ---- */
+/* ---- ESTOQUE ----
+   Modelo:
+   - un       : unidade de USO (na receita) — ex.: g, ml, unidade
+   - unCompra : unidade de COMPRA (embalagem) — ex.: pacote, caixa
+   - cont     : quanto vem em UMA embalagem, medido em `un` (ex.: 150 g)
+   - preco    : preço pago por UMA embalagem
+   - cu       : custo por unidade de USO = preco / cont (ex.: R$/g)
+   - atual    : estoque atual em unidades de COMPRA (ex.: 3 pacotes) — pode ser fracionado
+   - min      : mínimo p/ alerta em unidades de COMPRA
+*/
+function migrarIngredientes(){
+  let mudou=false;
+  (S.ingredientes||[]).forEach(i=>{
+    if(!i.unCompra){ i.unCompra='pacote'; mudou=true; }
+    // Se estoque foi salvo em unidade de uso antes da mudança, converte p/ embalagens
+    if(i._migradoV2!==true){
+      const c=+i.cont||1;
+      i.atual=+(((+i.atual||0)/c).toFixed(4));
+      i.min  =+(((+i.min  ||0)/c).toFixed(4));
+      i._migradoV2=true; mudou=true;
+    }
+  });
+  if(mudou&&typeof save==='function')save();
+}
+migrarIngredientes();
+
 function calcEstUnit(){
   const p=+(document.getElementById('est-preco').value)||0;
   const c=+(document.getElementById('est-cont').value)||1;
   const u=document.getElementById('est-un').value;
+  const uc=document.getElementById('est-uncompra').value;
   document.getElementById('est-unit').value=BRL4(p/c)+' / '+u;
   document.getElementById('est-unit-label').textContent='Custo por '+u;
-  document.getElementById('est-cont-label').textContent='Conteúdo da embalagem ('+u+')';
-  document.getElementById('est-atual-label').textContent='Estoque atual ('+u+')';
-  document.getElementById('est-min-label').textContent='Mínimo p/ alerta ('+u+')';
+  document.getElementById('est-cont-label').textContent='Conteúdo da embalagem ('+u+' por '+uc+')';
+  document.getElementById('est-atual-label').textContent='Estoque atual (em '+uc+'s)';
+  document.getElementById('est-min-label').textContent='Mínimo p/ alerta (em '+uc+'s)';
 }
 
 function addIngr(){
@@ -1038,36 +1077,47 @@ function addIngr(){
   const preco=+(document.getElementById('est-preco').value)||0;
   const cont=+(document.getElementById('est-cont').value)||1;
   const un=document.getElementById('est-un').value;
-  const atual=+(document.getElementById('est-atual').value)||0;
-  const min=+(document.getElementById('est-min').value)||0;
-  S.ingredientes.push({id:Date.now(),nome,preco,cont,un,atual,min,cu:preco/cont});
+  const unCompra=document.getElementById('est-uncompra').value;
+  const atual=+(document.getElementById('est-atual').value)||0; // em embalagens
+  const min=+(document.getElementById('est-min').value)||0;     // em embalagens
+  S.ingredientes.push({id:Date.now(),nome,preco,cont,un,unCompra,atual,min,cu:preco/cont,_migradoV2:true});
   save();renderEstoque();
   document.getElementById('est-nome').value='';
   document.getElementById('est-preco').value=10;
-  document.getElementById('est-cont').value=1000;
+  document.getElementById('est-cont').value=150;
   document.getElementById('est-un').value='g';
+  document.getElementById('est-uncompra').value='pacote';
   document.getElementById('est-atual').value=0;
   document.getElementById('est-min').value=0;
   calcEstUnit();
 }
 
+// Formata quantidade de embalagens: 3 → "3", 2.5 → "2,5"
+function fmtEmb(v){const n=Math.round(v*100)/100;return (Number.isInteger(n)?n:n.toFixed(2).replace('.',',')).toString();}
+
 function renderEstoque(){
   const baixo=S.ingredientes.filter(i=>i.min>0&&i.atual<=i.min).length;
-  const valor=S.ingredientes.reduce((s,i)=>s+i.atual*i.cu,0);
+  const valor=S.ingredientes.reduce((s,i)=>s+i.atual*(+i.preco||0),0); // atual em embalagens × preço da embalagem
   document.getElementById('est-count').textContent=S.ingredientes.length;
   document.getElementById('est-valor').textContent=BRL(valor);
   document.getElementById('est-baixo').textContent=baixo;
   const el=document.getElementById('est-lista');
   if(!S.ingredientes.length){el.innerHTML='<div class="empty">Nenhum ingrediente cadastrado.</div>';return;}
   el.innerHTML=S.ingredientes.map(i=>{
+    const uc=i.unCompra||'pacote';
     const tag=i.atual<=0?'<span class="tag tag-err">Sem estoque</span>':i.min>0&&i.atual<=i.min?'<span class="tag tag-warn">Estoque baixo</span>':'<span class="tag tag-ok">OK</span>';
+    const equivUso=+(i.atual*(+i.cont||0)).toFixed(2);
     return `<div class="list-row">
-      <div><div class="list-name">${i.nome}</div><div class="list-sub">${BRL4(i.cu)} / ${i.un} · mín: ${i.min} ${i.un}</div></div>
+      <div>
+        <div class="list-name">${i.nome}</div>
+        <div class="list-sub">${BRL4(i.cu)} / ${i.un} · ${i.cont} ${i.un}/${uc} · mín: ${fmtEmb(i.min)} ${uc}(s)</div>
+        <div class="list-sub" style="color:#A8A29E">≈ ${equivUso} ${i.un} disponíveis</div>
+      </div>
       <div style="display:flex;align-items:center;gap:10px">
         ${tag}
         <div class="qty-wrap">
           <button class="qty-btn" onclick="mvEst(${i.id},-1)">−</button>
-          <span class="qty-val">${i.atual} ${i.un}</span>
+          <span class="qty-val">${fmtEmb(i.atual)} ${uc}${i.atual===1?'':'(s)'}</span>
           <button class="qty-btn" onclick="mvEst(${i.id},1)">+</button>
         </div>
         <button class="btn btn-outline btn-sm" onclick="editIngr(${i.id})">✏️</button>
@@ -1082,6 +1132,7 @@ function editIngr(id){
   document.getElementById('ei-id').value=id;
   document.getElementById('ei-nome').value=i.nome;
   document.getElementById('ei-un').value=i.un;
+  document.getElementById('ei-uncompra').value=i.unCompra||'pacote';
   document.getElementById('ei-preco').value=i.preco;
   document.getElementById('ei-cont').value=i.cont;
   document.getElementById('ei-atual').value=i.atual;
@@ -1093,13 +1144,18 @@ function calcEditUnit(){
   const p=+(document.getElementById('ei-preco').value)||0;
   const c=+(document.getElementById('ei-cont').value)||1;
   const u=document.getElementById('ei-un').value;
+  const uc=document.getElementById('ei-uncompra').value;
   document.getElementById('ei-unit').value=BRL4(p/c)+' / '+u;
+  document.getElementById('ei-cont-label').textContent='Conteúdo da embalagem ('+u+' por '+uc+')';
+  document.getElementById('ei-atual-label').textContent='Estoque atual (em '+uc+'s)';
+  document.getElementById('ei-min-label').textContent='Mínimo p/ alerta (em '+uc+'s)';
 }
 function saveEditIngr(){
   const id=+document.getElementById('ei-id').value;
   const i=S.ingredientes.find(x=>x.id===id);if(!i)return;
   i.nome=document.getElementById('ei-nome').value.trim()||i.nome;
   i.un=document.getElementById('ei-un').value;
+  i.unCompra=document.getElementById('ei-uncompra').value;
   i.preco=+(document.getElementById('ei-preco').value)||0;
   i.cont=+(document.getElementById('ei-cont').value)||1;
   i.atual=+(document.getElementById('ei-atual').value)||0;
@@ -1109,8 +1165,23 @@ function saveEditIngr(){
   document.getElementById('edit-ingr-modal').style.display='none';
 }
 function closeEditIngr(){document.getElementById('edit-ingr-modal').style.display='none';}
-function mvEst(id,d){const i=S.ingredientes.find(x=>x.id===id);if(i){i.atual=Math.max(0,i.atual+d);save();renderEstoque();}}
+// +/- move 1 embalagem inteira. Mantém saldo fracionado se já houver.
+function mvEst(id,d){const i=S.ingredientes.find(x=>x.id===id);if(i){i.atual=Math.max(0,+((i.atual+d).toFixed(4)));save();renderEstoque();}}
 function delIngr(id){if(!confirm('Remover?'))return;S.ingredientes=S.ingredientes.filter(x=>x.id!==id);save();renderEstoque();}
+
+/* Consumo automático — usado quando uma receita/venda consome ingrediente.
+   qtd é medida na unidade de uso da receita (unRec). Converte p/ unidade de USO
+   do ingrediente e depois p/ frações da unidade de COMPRA. */
+function consumirEstoque(iid, qtd, unRec){
+  const i=S.ingredientes.find(x=>x.id==iid); if(!i) return false;
+  const fator=fatorConversao(i.un, unRec||i.un);          // uso_receita → uso_ingr
+  const qtdEmUso=qtd*fator;                                // total em unidade de USO
+  const embConsumidas=qtdEmUso/(+i.cont||1);               // fração de embalagens
+  i.atual=+((i.atual-embConsumidas).toFixed(4));
+  if(i.atual<0)i.atual=0;
+  save();renderEstoque();
+  return true;
+}
 
 /* ---- CONVERSÃO DE UNIDADES ---- */
 const UN_BASE={g:1,kg:1000,ml:1,l:1000,unidade:1,pacote:1,caixa:1,bandeja:1,saco:1,lata:1};
@@ -1553,24 +1624,36 @@ calcEmbUnit();calcEstUnit();load();
     <input type="hidden" id="ei-id">
     <div class="g2">
       <div class="field"><label>Nome</label><input type="text" id="ei-nome"></div>
+      <div class="field"><label>Unidade de compra</label>
+        <select id="ei-uncompra" onchange="calcEditUnit()">
+          <option value="unidade">Unidade</option>
+          <option value="pacote">Pacote</option>
+          <option value="caixa">Caixa</option>
+          <option value="saco">Saco</option>
+          <option value="lata">Lata</option>
+          <option value="bandeja">Bandeja</option>
+          <option value="garrafa">Garrafa</option>
+          <option value="frasco">Frasco</option>
+        </select>
+      </div>
+    </div>
+    <div class="g2">
       <div class="field"><label>Unidade de uso</label>
         <select id="ei-un" onchange="calcEditUnit()">
           <option value="g">Gramas (g)</option><option value="kg">Quilogramas (kg)</option>
           <option value="ml">Mililitros (ml)</option><option value="l">Litros (l)</option>
-          <option value="unidade">Unidade</option><option value="pacote">Pacote</option>
-          <option value="caixa">Caixa</option><option value="bandeja">Bandeja</option>
-          <option value="saco">Saco</option><option value="lata">Lata</option>
+          <option value="unidade">Unidade</option>
         </select>
       </div>
-    </div>
-    <div class="g3">
-      <div class="field"><label>Preço da embalagem (R$)</label><input type="number" id="ei-preco" step="0.01" oninput="calcEditUnit()"></div>
-      <div class="field"><label>Conteúdo da embalagem</label><input type="number" id="ei-cont" oninput="calcEditUnit()"></div>
-      <div class="field"><label>Custo por unidade</label><input type="text" id="ei-unit" class="calc-out" readonly></div>
+      <div class="field"><label id="ei-cont-label">Conteúdo da embalagem</label><input type="number" id="ei-cont" oninput="calcEditUnit()"></div>
     </div>
     <div class="g2">
-      <div class="field"><label>Estoque atual</label><input type="number" id="ei-atual" step="0.01"></div>
-      <div class="field"><label>Mínimo p/ alerta</label><input type="number" id="ei-min" step="0.01"></div>
+      <div class="field"><label>Preço da embalagem (R$)</label><input type="number" id="ei-preco" step="0.01" oninput="calcEditUnit()"></div>
+      <div class="field"><label>Custo por unidade de uso</label><input type="text" id="ei-unit" class="calc-out" readonly></div>
+    </div>
+    <div class="g2">
+      <div class="field"><label id="ei-atual-label">Estoque atual (em pacotes)</label><input type="number" id="ei-atual" step="0.01"></div>
+      <div class="field"><label id="ei-min-label">Mínimo p/ alerta (em pacotes)</label><input type="number" id="ei-min" step="0.01"></div>
     </div>
     <div style="display:flex;gap:10px;margin-top:6px">
       <button class="btn btn-red" onclick="saveEditIngr()" style="flex:1">Salvar alterações</button>
