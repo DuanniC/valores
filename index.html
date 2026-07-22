@@ -135,6 +135,7 @@ tr:last-child td{border:none}
 <div class="header">
   <div class="logo-box">🎂</div>
   <span class="logo-name">Doce Preço</span>
+  <span id="sync-status" style="margin-left:auto;font-size:11px;color:#A8A29E"></span>
 </div>
 
 <div class="nav">
@@ -487,7 +488,19 @@ tr:last-child td{border:none}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
+const SUPABASE_URL='https://ybxuyuojjuxrfatyrfyz.supabase.co';
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlieHV5dW9qanV4cmZhdHlyZnl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3MDc3NzQsImV4cCI6MjEwMDI4Mzc3NH0.O9ex5YPIVdQ2VDCSGypiy3FlLVlJIkoVjdHfvW7J6_4';
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+let saveTimer=null;
+let syncStatusEl=null;
+
+function setSyncStatus(txt){
+  if(!syncStatusEl) syncStatusEl=document.getElementById('sync-status');
+  if(syncStatusEl) syncStatusEl.textContent=txt;
+}
+
 const KEY='doce-preco-v3';
 
 // Estado padrão
@@ -531,26 +544,58 @@ const S_DEFAULT = {
 
 let S = JSON.parse(JSON.stringify(S_DEFAULT));
 
-function load(){
+function applyLoaded(parsed){
+  // Merge para não perder campos novos
+  S={...S_DEFAULT,...parsed};
+  // Mescla cfg campo a campo (não substitui o objeto inteiro) para não perder
+  // campos novos (ex: salpct) quando o dado salvo é de uma versão anterior
+  S.cfg={...S_DEFAULT.cfg,...(parsed.cfg||{})};
+  if(!S.canais||!S.canais.length) S.canais=[...S_DEFAULT.canais];
+  if(!S.despesasFixas||!S.despesasFixas.length) S.despesasFixas=S_DEFAULT.despesasFixas.map(d=>({...d}));
+  if(!S.embCats||!S.embCats.length) S.embCats=[...S_DEFAULT.embCats];
+}
+
+async function load(){
+  // 1) Carrega rápido do cache local (localStorage) para não travar a tela
   try{
-    const d=localStorage.getItem(KEY);
-    if(d){
-      const parsed=JSON.parse(d);
-      // Merge para não perder campos novos
-      S={...S_DEFAULT,...parsed};
-      // Mescla cfg campo a campo (não substitui o objeto inteiro) para não perder
-      // campos novos (ex: salpct) quando o dado salvo é de uma versão anterior
-      S.cfg={...S_DEFAULT.cfg,...(parsed.cfg||{})};
-      if(!S.canais||!S.canais.length) S.canais=[...S_DEFAULT.canais];
-      if(!S.despesasFixas||!S.despesasFixas.length) S.despesasFixas=S_DEFAULT.despesasFixas.map(d=>({...d}));
-      if(!S.embCats||!S.embCats.length) S.embCats=[...S_DEFAULT.embCats];
-    }
+    const cached=localStorage.getItem(KEY);
+    if(cached) applyLoaded(JSON.parse(cached));
   }catch(e){}
+
+  // 2) Busca a versão mais recente no Supabase
+  setSyncStatus('Sincronizando…');
+  try{
+    const {data,error}=await sb.from('app_state').select('data').eq('id',1).single();
+    if(error) throw error;
+    if(data && data.data && Object.keys(data.data).length){
+      applyLoaded(data.data);
+      try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
+    }
+    setSyncStatus('Sincronizado ✓');
+  }catch(e){
+    console.error('Supabase load error:',e);
+    setSyncStatus('Offline (usando cache local)');
+  }
   boot();
 }
 
 function save(){
+  // Cache local instantâneo
   try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
+
+  // Envia pro Supabase com debounce (evita gravar a cada tecla digitada)
+  setSyncStatus('Salvando…');
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async ()=>{
+    try{
+      const {error}=await sb.from('app_state').upsert({id:1,data:S,updated_at:new Date().toISOString()});
+      if(error) throw error;
+      setSyncStatus('Salvo ✓');
+    }catch(e){
+      console.error('Supabase save error:',e);
+      setSyncStatus('Erro ao salvar na nuvem (salvo localmente)');
+    }
+  },800);
 }
 
 const R=(v,d=2)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
