@@ -152,6 +152,7 @@ tr:last-child td{border:none}
   <button class="nav-btn" onclick="nav(this,'estoque')"><span class="nav-icon">📊</span> Estoque</button>
   <button class="nav-btn" onclick="nav(this,'vendas')"><span class="nav-icon">🛒</span> Vendas</button>
   <button class="nav-btn" onclick="nav(this,'reserva')"><span class="nav-icon">🐷</span> Reserva</button>
+  <button class="nav-btn" onclick="nav(this,'avaliacoes')"><span class="nav-icon">⭐</span> Avaliações</button>
   <button class="nav-btn" onclick="nav(this,'config')"><span class="nav-icon">⚙️</span> Configurações</button>
 </div>
 
@@ -450,6 +451,29 @@ tr:last-child td{border:none}
   </div>
 </div>
 
+<!-- ===== AVALIAÇÕES ===== -->
+<div id="pg-avaliacoes" class="page">
+  <div class="page-title">Avaliações de doçura</div>
+  <div class="page-sub">Registre a percepção de doçura de cada cookie e acompanhe a média das avaliações.</div>
+
+  <div class="card">
+    <div class="card-header">⭐ Nova avaliação</div>
+    <div class="card-sub">1 = Meio amargo · 2 = Pouco doce · 3 = Doçura equilibrada · 4 = Doce · 5 = Muito doce</div>
+    <div class="g2">
+      <div class="field"><label>Cookie</label><select id="av-prod"></select></div>
+      <div class="field"><label>Nome ou número do cliente</label><input type="text" id="av-cliente" placeholder="Ex: Maria ou (31) 90000-0000"></div>
+    </div>
+    <div class="field">
+      <label>Nível de doçura</label>
+      <div id="av-notas" class="canal-cards" style="grid-template-columns:repeat(5,1fr)"></div>
+    </div>
+    <button class="btn btn-red" onclick="salvarAvaliacao()">Enviar avaliação</button>
+    <div class="msg" id="av-msg"></div>
+  </div>
+
+  <div id="av-lista"></div>
+</div>
+
 <!-- ===== CONFIGURAÇÕES ===== -->
 <div id="pg-config" class="page">
   <div class="page-title">Configurações</div>
@@ -533,6 +557,7 @@ const S_DEFAULT = {
     {key:'papelaria',label:'🏷️ Papelaria'}
   ],
   vendas:[],
+  avaliacoes:[],
   res:{movs:[],pct:15,meta:500},
   embTab:'cookies',
   taxaOn:false,
@@ -629,6 +654,7 @@ function nav(btn,id){
   if(id==='vendas'){fillVCanalSelect();fillVProd();}
   if(id==='custos')renderCustos();
   if(id==='reserva'){calcReserva();}
+  if(id==='avaliacoes'){fillAvalProdSelect();renderAvNotas();renderAvaliacoes();}
   if(id==='config')renderConfig();
 }
 
@@ -648,6 +674,9 @@ function boot(){
   fillVProd();
   fillVCanalSelect();
   renderCanalCards();
+  fillAvalProdSelect();
+  renderAvNotas();
+  renderAvaliacoes();
   if(S.taxaOn){
     document.getElementById('taxa-toggle').classList.add('on');
     document.getElementById('canal-cards').style.display='grid';
@@ -1039,6 +1068,135 @@ function saveEditProd(){
   document.getElementById('edit-prod-modal').style.display='none';
 }
 function closeEditProd(){document.getElementById('edit-prod-modal').style.display='none';}
+
+/* ---- AVALIAÇÕES DE DOÇURA ---- */
+const AVAL_LABELS={1:'Meio amargo',2:'Pouco doce',3:'Doçura equilibrada',4:'Doce',5:'Muito doce'};
+
+function fillAvalProdSelect(){
+  const sel=document.getElementById('av-prod');if(!sel)return;
+  const cur=sel.value;
+  if(!S.produtos.length){
+    sel.innerHTML='<option value="">Nenhum cookie cadastrado</option>';
+    return;
+  }
+  sel.innerHTML=S.produtos.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+  if(cur)sel.value=cur;
+}
+
+function renderAvNotas(){
+  const el=document.getElementById('av-notas');if(!el)return;
+  if(!window._avNota)window._avNota=null;
+  el.innerHTML=[1,2,3,4,5].map(n=>`
+    <div class="canal-card ${window._avNota===n?'active':''}" onclick="setAvNota(${n})" style="text-align:center;cursor:pointer">
+      <div class="canal-card-name" style="font-size:16px">${n} ⭐</div>
+      <div class="canal-card-sub">${AVAL_LABELS[n]}</div>
+    </div>`).join('');
+}
+
+function setAvNota(n){window._avNota=n;renderAvNotas();}
+
+function salvarAvaliacao(){
+  const prodId=+(document.getElementById('av-prod').value||0);
+  const cliente=document.getElementById('av-cliente').value.trim();
+  if(!prodId){msg('av-msg','Cadastre e selecione um cookie.',true);return;}
+  if(!cliente){msg('av-msg','Informe o nome ou número do cliente.',true);return;}
+  if(!window._avNota){msg('av-msg','Selecione um nível de doçura de 1 a 5.',true);return;}
+  S.avaliacoes.push({id:Date.now(),produtoId:prodId,cliente,nota:window._avNota,data:new Date().toISOString()});
+  save();
+  document.getElementById('av-cliente').value='';
+  window._avNota=null;
+  renderAvNotas();
+  msg('av-msg','✓ Avaliação registrada!');
+  renderAvaliacoes();
+}
+
+function delAvaliacao(id){
+  if(!confirm('Remover esta avaliação?'))return;
+  S.avaliacoes=S.avaliacoes.filter(a=>a.id!==id);
+  save();
+  renderAvaliacoes();
+}
+
+function editAvaliacao(id){
+  const a=S.avaliacoes.find(x=>x.id===id);if(!a)return;
+  document.getElementById('ea-id').value=id;
+  document.getElementById('ea-cliente').value=a.cliente;
+  window._eaNota=a.nota;
+  renderEaNotas();
+  document.getElementById('edit-aval-modal').style.display='flex';
+}
+
+function renderEaNotas(){
+  const el=document.getElementById('ea-notas');if(!el)return;
+  el.innerHTML=[1,2,3,4,5].map(n=>`
+    <div class="canal-card ${window._eaNota===n?'active':''}" onclick="setEaNota(${n})" style="text-align:center;cursor:pointer">
+      <div class="canal-card-name" style="font-size:16px">${n} ⭐</div>
+      <div class="canal-card-sub">${AVAL_LABELS[n]}</div>
+    </div>`).join('');
+}
+
+function setEaNota(n){window._eaNota=n;renderEaNotas();}
+
+function saveEditAvaliacao(){
+  const id=+document.getElementById('ea-id').value;
+  const a=S.avaliacoes.find(x=>x.id===id);if(!a)return;
+  const cliente=document.getElementById('ea-cliente').value.trim();
+  if(!cliente){alert('Informe o nome ou número do cliente.');return;}
+  if(!window._eaNota){alert('Selecione um nível de doçura de 1 a 5.');return;}
+  a.cliente=cliente;
+  a.nota=window._eaNota;
+  save();
+  closeEditAvaliacao();
+  renderAvaliacoes();
+}
+
+function closeEditAvaliacao(){
+  document.getElementById('edit-aval-modal').style.display='none';
+}
+
+function toggleAvDetalhe(prodId){
+  const el=document.getElementById('av-det-'+prodId);
+  if(!el)return;
+  el.style.display=el.style.display==='none'?'block':'none';
+}
+
+function renderAvaliacoes(){
+  const el=document.getElementById('av-lista');if(!el)return;
+  if(!S.produtos.length){
+    el.innerHTML='<div class="empty"><div class="empty-icon">🍪</div>Cadastre cookies na Calculadora ou Planilha de custos para poder avaliá-los.</div>';
+    return;
+  }
+  const cards=S.produtos.map(p=>{
+    const avals=S.avaliacoes.filter(a=>a.produtoId===p.id);
+    const count=avals.length;
+    const media=count?avals.reduce((s,a)=>s+a.nota,0)/count:0;
+    const mediaTxt=count?R(media,1)+'/5':'—';
+    const tagClass=count?'tag-ok':'tag-warn';
+    const linhas=avals.slice().sort((a,b)=>b.id-a.id).map(a=>`
+      <div class="list-row">
+        <div>
+          <div class="list-name">${a.cliente}</div>
+          <div class="list-sub">${AVAL_LABELS[a.nota]} · ${new Date(a.data).toLocaleDateString('pt-BR')}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="tag tag-ok">${a.nota} ⭐</span>
+          <button class="btn btn-outline btn-sm" onclick="editAvaliacao(${a.id})">✏️</button>
+          <button class="btn btn-outline btn-sm" onclick="delAvaliacao(${a.id})">🗑️</button>
+        </div>
+      </div>`).join('') || '<div class="empty" style="padding:16px">Nenhuma avaliação ainda.</div>';
+    return `
+    <div class="card">
+      <div class="card-header" style="justify-content:space-between">
+        <span>🍪 ${p.nome}</span>
+        <span class="tag ${tagClass}">${mediaTxt}</span>
+      </div>
+      <div class="card-sub" style="margin-top:-4px">${count?`Baseado em ${count} avaliaç${count===1?'ão':'ões'}`:'Ainda sem avaliações'}</div>
+      <button class="btn btn-outline btn-sm" onclick="toggleAvDetalhe(${p.id})">Ver avaliações</button>
+      <div id="av-det-${p.id}" style="display:none;margin-top:10px">${linhas}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML=cards;
+}
 
 /* ---- ESTOQUE ----
    Modelo:
@@ -1620,7 +1778,28 @@ calcEmbUnit();calcEstUnit();load();
   </div>
 </div>
 
+<!-- ===== MODAL: EDITAR AVALIAÇÃO ===== -->
+<div id="edit-aval-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-size:16px;font-weight:600">✏️ Editar avaliação</div>
+      <button onclick="closeEditAvaliacao()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#A8A29E">×</button>
+    </div>
+    <input type="hidden" id="ea-id">
+    <div class="field"><label>Nome ou número do cliente</label><input type="text" id="ea-cliente"></div>
+    <div class="field">
+      <label>Nível de doçura</label>
+      <div id="ea-notas" class="canal-cards" style="grid-template-columns:repeat(5,1fr)"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-red" onclick="saveEditAvaliacao()" style="flex:1">Salvar alterações</button>
+      <button class="btn btn-outline" onclick="closeEditAvaliacao()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: EDITAR INGREDIENTE ===== -->
+
 <div id="edit-ingr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
