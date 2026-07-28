@@ -639,7 +639,7 @@ html,body{overflow-x:hidden}
     <div class="card-header">🧾 CMV — Custo da Mercadoria Vendida</div>
     <div class="card-sub">Tudo que entra direto no produto. Refletido automaticamente na Calculadora.</div>
     <div class="g3">
-      <div class="field"><label>Custo de fabricação (R$)</label><input type="number" id="cfg-fab" step="0.01" oninput="saveCfgAndRefresh()"></div>
+      <div class="field"><label>Custo de fabricação (R$)</label><input type="number" id="cfg-fab" step="0.01" oninput="S.cfg.recId=null;saveCfgAndRefresh()"></div>
       <div class="field"><label>Embalagem (R$)</label><input type="number" id="cfg-emb" step="0.01" oninput="saveCfgAndRefresh()"></div>
       <div class="field"><label>Entrega (R$)</label><input type="number" id="cfg-ent" step="0.01" oninput="saveCfgAndRefresh()"></div>
     </div>
@@ -1155,7 +1155,7 @@ function salvarProduto(){
   const nome=document.getElementById('c-nome').value.trim();
   if(!nome){msg('c-msg','Informe o nome.',true);return;}
   if(!window._calc)calcPreco();
-  S.produtos.push({...window._calc,nome,id:Date.now()});
+  S.produtos.push({...window._calc,nome,id:Date.now(),recId:S.cfg.recId||null});
   save();document.getElementById('c-nome').value='';
   msg('c-msg','✓ Produto salvo na planilha!');
   fillVProd();
@@ -1242,7 +1242,7 @@ function saveEditProd(){
   const id=+document.getElementById('ep-id').value;
   const p=S.produtos.find(x=>x.id===id);if(!p||!window._epCalc)return;
   const nome=document.getElementById('ep-nome').value.trim()||p.nome;
-  Object.assign(p,window._epCalc,{nome});
+  Object.assign(p,window._epCalc,{nome,recId:null});
   save();renderCustos();fillVProd();
   document.getElementById('edit-prod-modal').style.display='none';
 }
@@ -1504,7 +1504,8 @@ function saveEditIngr(){
   i.atual=+(document.getElementById('ei-atual').value)||0;
   i.min=+(document.getElementById('ei-min').value)||0;
   i.cu=i.preco/i.cont;
-  save();renderEstoque();
+  recalcCustosDeIngredientes();
+  save();renderEstoque();renderReceitas();renderCustos();applyConfigToCalc();calcPreco();
   document.getElementById('edit-ingr-modal').style.display='none';
 }
 function closeEditIngr(){document.getElementById('edit-ingr-modal').style.display='none';}
@@ -1660,7 +1661,38 @@ function closeEditRec(){document.getElementById('edit-rec-modal').style.display=
 function envRec(id){
   const r=S.receitas.find(x=>x.id===id);if(!r)return;
   S.cfg.fab=parseFloat(r.cpu.toFixed(2));
+  S.cfg.recId=id;
   save();applyConfigToCalc();calcPreco();goCalc();
+}
+
+/* Recalcula receitas e produtos da Planilha de custos sempre que o custo
+   de um ingrediente muda (preço, embalagem ou conversão), sem precisar
+   passar de novo pela calculadora. */
+function recalcCustosDeIngredientes(){
+  (S.receitas||[]).forEach(r=>{
+    (r.ingrs||[]).forEach(x=>{
+      const i=S.ingredientes.find(y=>y.id==x.iid);
+      if(i)x.custo=calcCustoIngr(i,x.qtd,x.un);
+    });
+    r.ct=(r.ingrs||[]).reduce((s,x)=>s+x.custo,0);
+    r.cpu=r.ct/(r.qtd||1);
+  });
+  (S.produtos||[]).forEach(p=>{
+    if(!p.recId)return;
+    const r=S.receitas.find(x=>x.id===p.recId);if(!r)return;
+    p.fab=parseFloat(r.cpu.toFixed(2));
+    p.cmv=p.fab+(p.emb||0)+(p.ent||0);
+    const soma=((p.pv||0)+(p.pf||0)+(p.pi||0)+(p.pl||0))/100;
+    if(soma<1){
+      p.mk=1/(1-soma);
+      p.preco=p.cmv*p.mk;
+      p.lucro=p.preco*((p.pl||0)/100);
+    }
+  });
+  if(S.cfg.recId){
+    const r=S.receitas.find(x=>x.id===S.cfg.recId);
+    if(r)S.cfg.fab=parseFloat(r.cpu.toFixed(2));
+  }
 }
 
 /* ---- EMBALAGENS ---- */
