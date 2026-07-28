@@ -35,7 +35,7 @@ body{font-family:'Kodchasan',system-ui,sans-serif;font-size:14px;color:var(--tex
 
 /* ===== LAYOUT ===== */
 .layout{display:flex;min-height:100vh}
-.sidebar{width:var(--nav-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:100;flex-shrink:0}
+.sidebar{width:var(--nav-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;left:0;top:0;height:100vh;z-index:100;flex-shrink:0}
 .sidebar-brand{padding:20px 22px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border)}
 .brand-mark{display:flex;align-items:center;gap:10px;min-width:0}
 .brand-mark img{width:40px;height:40px;border-radius:50%;display:block;box-shadow:0 4px 14px -6px rgba(199,16,254,.45)}
@@ -56,7 +56,7 @@ body{font-family:'Kodchasan',system-ui,sans-serif;font-size:14px;color:var(--tex
 .scrim{display:none;position:fixed;inset:0;background:rgba(31,15,26,.45);z-index:99;opacity:0;transition:opacity .2s}
 .scrim.show{display:block;opacity:1}
 
-.main{flex:1;min-width:0}
+.main{flex:1;min-width:0;margin-left:var(--nav-w)}
 .page{display:none;max-width:920px;margin:0 auto;padding:36px 28px 60px}
 .page.active{display:block}
 .page-title{font-size:26px;font-weight:600;color:var(--text);margin-bottom:6px;letter-spacing:-.3px;font-family:'Kodchasan',sans-serif}
@@ -220,7 +220,7 @@ tr:last-child td{border:none}
   .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .25s ease;height:100vh;box-shadow:var(--shadow-lg)}
   .sidebar.open{transform:translateX(0)}
   .mobile-topbar{display:flex}
-  .main{width:100%;min-width:0}
+  .main{width:100%;min-width:0;margin-left:0}
   .page{padding:24px 18px 60px}
   .page-title{font-size:22px}
   .metric-val{font-size:18px}
@@ -267,6 +267,7 @@ html,body{overflow-x:hidden}
         <button class="nav-btn" onclick="nav(this,'receitas')"><span class="nav-icon">🍫</span> Receitas</button>
         <button class="nav-btn" onclick="nav(this,'embalagens')"><span class="nav-icon">📦</span> Embalagens</button>
         <button class="nav-btn" onclick="nav(this,'custos')"><span class="nav-icon">📋</span> Planilha de custos</button>
+        <button class="nav-btn" onclick="nav(this,'valores')"><span class="nav-icon">💰</span> Valores dos Itens</button>
       </div>
       <div class="nav-group">
         <div class="nav-group-label">Gestão</div>
@@ -432,6 +433,34 @@ html,body{overflow-x:hidden}
   <div class="page-sub">Produtos calculados na calculadora aparecem aqui automaticamente.</div>
   <div id="custos-body">
     <div class="empty"><div class="empty-icon">📋</div>Nenhum produto salvo ainda.</div>
+  </div>
+</div>
+
+<!-- ===== VALORES DOS ITENS ===== -->
+<div id="pg-valores" class="page">
+  <div class="page-title">Valores dos Itens</div>
+  <div class="page-sub">Cadastre os ingredientes e produtos que você compra e registre os preços encontrados em cada mercado. Clique em um item para adicionar lojas e ver a comparação de preços.</div>
+
+  <div class="metrics" style="grid-template-columns:repeat(2,1fr)">
+    <div class="metric-card"><div class="metric-label">Itens cadastrados</div><div class="metric-val" id="val-count">0</div></div>
+    <div class="metric-card"><div class="metric-label">Preços cadastrados</div><div class="metric-val" id="val-count-precos">0</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">➕ Cadastrar novo item</div>
+    <div class="card-sub">Ex: Farinha de trigo, Açúcar refinado, Chocolate 70%, Manteiga sem sal.</div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="flex:1;min-width:200px;margin-bottom:0"><label>Nome do item</label><input type="text" id="val-nome" placeholder="Ex: Farinha de trigo" onkeydown="if(event.key==='Enter')addValorItem()"></div>
+      <button class="btn btn-red" onclick="addValorItem()">Adicionar item</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <span>🧂 Itens cadastrados</span>
+      <input type="text" id="val-busca" placeholder="Buscar item..." style="max-width:220px" oninput="renderValores()">
+    </div>
+    <div id="val-lista"><div class="empty"><div class="empty-icon">💰</div>Nenhum item cadastrado ainda.</div></div>
   </div>
 </div>
 
@@ -706,7 +735,7 @@ const KEY='doce-preco-v3';
 
 // Estado padrão
 const S_DEFAULT = {
-  produtos:[],combos:[],pedidos:[],ingredientes:[],receitas:[],
+  produtos:[],combos:[],pedidos:[],ingredientes:[],receitas:[],valores:[],
   embalagens:{cookies:[],brownie:[],retirada:[],papelaria:[]},
   embCats:[
     {key:'cookies',label:'🍪 Cookies'},
@@ -757,6 +786,8 @@ function applyLoaded(parsed){
   if(!S.embCats||!S.embCats.length) S.embCats=[...S_DEFAULT.embCats];
   if(!Array.isArray(S.combos)) S.combos=[];
   if(!Array.isArray(S.pedidos)) S.pedidos=[];
+  if(!Array.isArray(S.valores)) S.valores=[];
+  S.valores.forEach(it=>{if(!Array.isArray(it.precos))it.precos=[];});
   // Migração: se houver vendas antigas (linhas soltas) sem pedido, agrupa cada uma como pedido individual
   if(Array.isArray(S.vendas) && S.vendas.length && S.pedidos.length===0){
     S.vendas.forEach(v=>{
@@ -829,6 +860,7 @@ function nav(btn,id){
   if(id==='vendas'){fillVCanalSelect();if(!vItens.length)addVItem();else renderVItens();}
   if(id==='combos'){renderCombos();if(!cbItens.length)addCbItem();else renderCbItens();}
   if(id==='custos')renderCustos();
+  if(id==='valores')renderValores();
   if(id==='reserva'){calcReserva();}
   if(id==='avaliacoes'){fillAvalProdSelect();renderAvNotas();renderAvaliacoes();}
   if(id==='config')renderConfig();
@@ -853,6 +885,7 @@ function boot(){
   fillVCanalSelect();
   renderCanalCards();
   renderCombos();
+  renderValores();
   fillAvalProdSelect();
   renderAvNotas();
   renderAvaliacoes();
@@ -1512,6 +1545,181 @@ function closeEditIngr(){document.getElementById('edit-ingr-modal').style.displa
 // +/- move 1 embalagem inteira. Mantém saldo fracionado se já houver.
 function mvEst(id,d){const i=S.ingredientes.find(x=>x.id===id);if(i){i.atual=Math.max(0,+((i.atual+d).toFixed(4)));save();renderEstoque();}}
 function delIngr(id){if(!confirm('Remover?'))return;S.ingredientes=S.ingredientes.filter(x=>x.id!==id);save();renderEstoque();}
+
+/* ========== VALORES DOS ITENS (comparação de preços por mercado) ========== */
+let valorAtualId=null;   // item aberto no modal de detalhes
+let valorPrecoEditId=null; // preço em edição inline dentro do modal
+
+function addValorItem(){
+  const nomeEl=document.getElementById('val-nome');
+  const nome=nomeEl.value.trim();
+  if(!nome){alert('Informe o nome do item.');return;}
+  S.valores.push({id:Date.now(),nome,precos:[]});
+  save();renderValores();
+  nomeEl.value='';nomeEl.focus();
+}
+
+function delValorItem(id){
+  if(!confirm('Remover este item e todos os preços cadastrados nele?'))return;
+  S.valores=S.valores.filter(x=>x.id!==id);
+  save();renderValores();
+}
+function delValorItemFromModal(){
+  if(!valorAtualId)return;
+  delValorItem(valorAtualId);
+  closeValorItem();
+}
+
+function renderValores(){
+  document.getElementById('val-count').textContent=S.valores.length;
+  document.getElementById('val-count-precos').textContent=S.valores.reduce((s,it)=>s+it.precos.length,0);
+  const el=document.getElementById('val-lista');
+  const busca=(document.getElementById('val-busca')?.value||'').trim().toLowerCase();
+  const lista=busca?S.valores.filter(it=>it.nome.toLowerCase().includes(busca)):S.valores;
+
+  if(!S.valores.length){el.innerHTML='<div class="empty"><div class="empty-icon">💰</div>Nenhum item cadastrado ainda.</div>';return;}
+  if(!lista.length){el.innerHTML='<div class="empty">Nenhum item encontrado para "'+busca+'".</div>';return;}
+
+  el.innerHTML=lista.map(item=>{
+    const precos=item.precos||[];
+    let resumo;
+    if(precos.length>1){
+      const min=Math.min(...precos.map(p=>p.preco));
+      const max=Math.max(...precos.map(p=>p.preco));
+      resumo=`${precos.length} preços · menor ${BRL(min)} · maior ${BRL(max)}`;
+    }else if(precos.length===1){
+      resumo=`1 preço · ${BRL(precos[0].preco)}`;
+    }else{
+      resumo='Nenhum preço cadastrado';
+    }
+    return `<div class="list-row" style="cursor:pointer" onclick="openValorItem(${item.id})">
+      <div>
+        <div class="list-name">🧂 ${item.nome}</div>
+        <div class="list-sub">${resumo}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();delValorItem(${item.id})">🗑️</button>
+        <span style="color:var(--text-soft);font-size:20px;line-height:1">›</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ---- Modal de detalhes do item ---- */
+function openValorItem(id){
+  valorAtualId=id;
+  valorPrecoEditId=null;
+  renderValorDetail();
+  document.getElementById('valor-detail-modal').style.display='flex';
+}
+function closeValorItem(){
+  document.getElementById('valor-detail-modal').style.display='none';
+  valorAtualId=null;
+  valorPrecoEditId=null;
+  renderValores();
+}
+
+function saveValorNome(){
+  const it=S.valores.find(x=>x.id===valorAtualId);if(!it)return;
+  const nome=document.getElementById('vd-nome').value.trim();
+  if(!nome){alert('Informe o nome do item.');return;}
+  it.nome=nome;
+  save();renderValorDetail();
+}
+
+function addValorPrecoModal(){
+  const it=S.valores.find(x=>x.id===valorAtualId);if(!it)return;
+  const mEl=document.getElementById('vd-mercado');
+  const pEl=document.getElementById('vd-preco');
+  const mercado=mEl.value.trim();
+  const preco=+pEl.value;
+  if(!mercado){alert('Informe o nome do mercado/loja.');return;}
+  if(!preco||preco<=0){alert('Informe um preço válido.');return;}
+  it.precos.push({id:Date.now(),mercado,preco});
+  save();
+  mEl.value='';pEl.value='';mEl.focus();
+  renderValorDetail();
+}
+
+function delValorPrecoModal(precoId){
+  const it=S.valores.find(x=>x.id===valorAtualId);if(!it)return;
+  if(!confirm('Remover este preço?'))return;
+  it.precos=it.precos.filter(p=>p.id!==precoId);
+  save();renderValorDetail();
+}
+
+function startEditPreco(precoId){valorPrecoEditId=precoId;renderValorDetail();}
+function cancelEditPreco(){valorPrecoEditId=null;renderValorDetail();}
+function saveEditPrecoInline(precoId){
+  const it=S.valores.find(x=>x.id===valorAtualId);if(!it)return;
+  const p=it.precos.find(x=>x.id===precoId);if(!p)return;
+  const mercado=document.getElementById('vdp-mercado-'+precoId).value.trim();
+  const preco=+document.getElementById('vdp-preco-'+precoId).value;
+  if(!mercado){alert('Informe o nome do mercado/loja.');return;}
+  if(!preco||preco<=0){alert('Informe um preço válido.');return;}
+  p.mercado=mercado;p.preco=preco;
+  valorPrecoEditId=null;
+  save();renderValorDetail();
+}
+
+function renderValorDetail(){
+  const it=S.valores.find(x=>x.id===valorAtualId);
+  if(!it){closeValorItem();return;}
+  document.getElementById('vd-titulo').textContent=it.nome;
+  document.getElementById('vd-nome').value=it.nome;
+
+  const precos=it.precos||[];
+  const statsEl=document.getElementById('vd-stats');
+  if(precos.length>=1){
+    const ordenado=[...precos].sort((a,b)=>a.preco-b.preco);
+    const min=ordenado[0];
+    const max=ordenado[ordenado.length-1];
+    const diff=max.preco-min.preco;
+    const diffPct=min.preco>0?(diff/min.preco*100):0;
+    statsEl.innerHTML=`<div class="metrics" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      <div class="metric-card"><div class="metric-label">Menor preço</div><div class="metric-val">${BRL(min.preco)}</div><div class="list-sub">${min.mercado}</div></div>
+      <div class="metric-card"><div class="metric-label">Maior preço</div><div class="metric-val red">${BRL(max.preco)}</div><div class="list-sub">${max.mercado}</div></div>
+      <div class="metric-card"><div class="metric-label">Diferença</div><div class="metric-val">${BRL(diff)}</div><div class="list-sub">${precos.length>1?R(diffPct,1)+'% a mais':'—'}</div></div>
+    </div>`;
+  }else{
+    statsEl.innerHTML='<div class="card-sub" style="margin:0 0 16px">Nenhum preço cadastrado ainda para este item.</div>';
+  }
+
+  const menorId=precos.length>1?[...precos].sort((a,b)=>a.preco-b.preco)[0].id:null;
+  const maiorId=precos.length>1?[...precos].sort((a,b)=>b.preco-a.preco)[0].id:null;
+
+  const listEl=document.getElementById('vd-precos-list');
+  if(!precos.length){
+    listEl.innerHTML='<div class="empty" style="padding:20px">Nenhum preço cadastrado.</div>';
+    return;
+  }
+  listEl.innerHTML=[...precos].sort((a,b)=>a.preco-b.preco).map(p=>{
+    if(p.id===valorPrecoEditId){
+      return `<div class="list-row">
+        <div class="g2" style="flex:1;margin-bottom:0">
+          <div class="field" style="margin-bottom:0"><input type="text" id="vdp-mercado-${p.id}" value="${p.mercado}" placeholder="Mercado/Loja"></div>
+          <div class="field" style="margin-bottom:0"><input type="number" id="vdp-preco-${p.id}" value="${p.preco}" step="0.01" placeholder="0,00"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-red btn-sm" onclick="saveEditPrecoInline(${p.id})">Salvar</button>
+          <button class="btn btn-outline btn-sm" onclick="cancelEditPreco()">Cancelar</button>
+        </div>
+      </div>`;
+    }
+    const tag=p.id===menorId?'<span class="tag tag-ok">Mais barato</span>':p.id===maiorId?'<span class="tag tag-err">Mais caro</span>':'';
+    return `<div class="list-row">
+      <div>
+        <div class="list-name">${p.mercado}</div>
+        <div class="list-sub">${BRL(p.preco)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${tag}
+        <button class="btn btn-outline btn-sm" onclick="startEditPreco(${p.id})">✏️</button>
+        <button class="btn btn-outline btn-sm" onclick="delValorPrecoModal(${p.id})">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
 /* Consumo automático — usado quando uma receita/venda consome ingrediente.
    qtd é medida na unidade de uso da receita (unRec). Converte p/ unidade de USO
@@ -2213,6 +2421,40 @@ calcEmbUnit();calcEstUnit();load();
   </div>
 </div>
 
+<!-- ===== MODAL: DETALHES DO ITEM (Valores dos Itens) ===== -->
+<div id="valor-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-size:16px;font-weight:600">🧂 <span id="vd-titulo">Item</span></div>
+      <button onclick="closeValorItem()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#A8A29E">×</button>
+    </div>
+
+    <div class="field">
+      <label>Nome do item</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="vd-nome" style="flex:1">
+        <button class="btn btn-outline btn-sm" onclick="saveValorNome()">Salvar nome</button>
+      </div>
+    </div>
+
+    <div id="vd-stats"></div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px">Preços cadastrados</div>
+    <div id="vd-precos-list"></div>
+
+    <div class="g3" style="align-items:end;margin-top:16px">
+      <div class="field" style="margin-bottom:0"><label>Mercado/Loja</label><input type="text" id="vd-mercado" placeholder="Ex: Atacadão" onkeydown="if(event.key==='Enter')addValorPrecoModal()"></div>
+      <div class="field" style="margin-bottom:0"><label>Preço (R$)</label><input type="number" id="vd-preco" step="0.01" placeholder="0,00" onkeydown="if(event.key==='Enter')addValorPrecoModal()"></div>
+      <button class="btn btn-red" onclick="addValorPrecoModal()">+ Adicionar</button>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-outline" onclick="closeValorItem()" style="flex:1">Fechar</button>
+      <button class="btn btn-outline" onclick="delValorItemFromModal()" style="color:#dc2626;border-color:#f3c6c6">🗑️ Excluir item</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: EDITAR RECEITA ===== -->
 <div id="edit-rec-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
@@ -2238,6 +2480,7 @@ calcEmbUnit();calcEstUnit();load();
 document.getElementById('edit-prod-modal').addEventListener('click',function(e){if(e.target===this)closeEditProd();});
 document.getElementById('edit-ingr-modal').addEventListener('click',function(e){if(e.target===this)closeEditIngr();});
 document.getElementById('edit-rec-modal').addEventListener('click',function(e){if(e.target===this)closeEditRec();});
+document.getElementById('valor-detail-modal').addEventListener('click',function(e){if(e.target===this)closeValorItem();});
 </script>
 </body>
 </html>
